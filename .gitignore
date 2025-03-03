@@ -2,3 +2,5 @@
 config.json
 access_reviews.db
 data/
+errors.log
+__pycache__/

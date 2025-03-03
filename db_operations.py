@@ -2,9 +2,10 @@ import sqlite3
 import json
 import logging
 from datetime import datetime
+import openpyxl
 
 # Load configuration
-with open('config.json', 'r') as config_file:
+with open('config.json', 'r') as config_file, open('config.json', 'r') as config_file:
     config = json.load(config_file)
 
 # Configure logging
