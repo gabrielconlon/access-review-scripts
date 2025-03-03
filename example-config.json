@@ -1,0 +1,12 @@
+{
+    "log_file": "errors.log",
+    "log_level": "ERROR",
+    "log_format": "%(asctime)s - %(levelname)s - %(message)s",
+    "excluded_sheets": ["instructions", "rollup"],
+    "review_columns": ["account status", "privilege", "role", "status", "Enabled", "Deactivated", "Role", "Status", "userType", "accountEnabled", "companyName"],
+    "review_values": ["Disabled", "Deactivated", "Inactive", "no", "FALSE", "TERM"],
+    "admin_roles": ["admin", "owner", "Account Owner", "SuperAdmin", "Administrator"],
+    "mismatch_values": ["N/A"],
+    "login_columns": ["login", "UserName", "email", "Email", "username_email", "mail"],
+    "database_file": "access_reviews.db"
+}
