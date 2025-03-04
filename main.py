@@ -4,9 +4,9 @@ import argparse
 import sqlite3
 import json
 import logging
-from db_operations import process_workbook
-from audit_operations import perform_audit
-from file_io_operations import write_audit_to_rollup
+from db_operations import *
+from audit_operations import *
+from file_io_operations import *
 
 # Load configuration
 with open('config.json', 'r') as config_file:

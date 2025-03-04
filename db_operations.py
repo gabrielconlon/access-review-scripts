@@ -122,3 +122,73 @@ def process_workbook(file_path, db_conn, verbosity):
 
     db_conn.commit()
     print("Database commit successful.")
+
+def list_services(db_conn, output_file=None):
+    cursor = db_conn.cursor()
+    cursor.execute('SELECT * FROM users')
+    rows = cursor.fetchall()
+    services_info = ""
+    for row in rows:
+        services_info += f"User: {row[1]} (Email: {row[0]})\n"
+        services_str = row[2]
+        services_info += f"Retrieved JSON string: {services_str}\n"
+        services = json.loads(services_str)  # Convert JSON string back to dictionary
+        for service_name, fields in services.items():
+            services_info += f"  Service: {service_name}\n"
+            for field, value in fields.items():
+                services_info += f"    {field}: {value}\n"
+        services_info += "\n"
+    
+    if output_file:
+        with open(output_file, 'w') as f:
+            f.write(services_info)
+    else:
+        print(services_info)
+
+def run_query(db_conn, query, output_file=None):
+    cursor = db_conn.cursor()
+    cursor.execute(query)
+    rows = cursor.fetchall()
+    query_result = ""
+    for row in rows:
+        query_result += f"{row}\n"
+    
+    if output_file:
+        with open(output_file, 'w') as f:
+            f.write(query_result)
+    else:
+        print(query_result)
+
+def print_user(db_conn, email, output_file=None):
+    cursor = db_conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE mail = ?', (email,))
+    row = cursor.fetchone()
+    if row:
+        user_info = f"User: {row[1]} (Email: {row[0]})\n  Services: {row[2]}"
+        if output_file:
+            with open(output_file, 'w') as f:
+                f.write(user_info)
+        else:
+            print(user_info)
+    else:
+        print(f"No user found with email: {email}")
+
+def print_table_schema(db_conn, output_file=None):
+    cursor = db_conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    tables = cursor.fetchall()
+    schema_info = ""
+    for table in tables:
+        table_name = table[0]
+        schema_info += f"Schema for table '{table_name}':\n"
+        cursor.execute(f'PRAGMA table_info("{table_name}")')
+        rows = cursor.fetchall()
+        for row in rows:
+            schema_info += f"  {row[1]}: {row[2]}\n"
+        schema_info += "\n"
+    
+    if output_file:
+        with open(output_file, 'w') as f:
+            f.write(schema_info)
+    else:
+        print(schema_info)

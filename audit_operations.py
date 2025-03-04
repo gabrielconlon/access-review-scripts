@@ -31,7 +31,9 @@ def perform_audit(file_path, db_conn, verbosity, debug):
                         field_name TEXT,
                         field_value TEXT,
                         needs_review BOOLEAN,
+                        admin_privileges_review BOOLEAN,
                         comments TEXT,
+                        admin_comments TEXT,
                         FOREIGN KEY(username) REFERENCES users(mail)
                       )''')
     db_conn.commit()
@@ -50,8 +52,10 @@ def perform_audit(file_path, db_conn, verbosity, debug):
             "email": user_email,
             "services": {},
             "needs_review": False,
+            "admin_privileges_review": False,
             "created_from": created_from,
-            "comments": set()  # Use a set to avoid duplicate comments
+            "comments": set(),  # Use a set to avoid duplicate comments
+            "admin_comments": set()  # Use a set to avoid duplicate admin comments
         }
 
         if verbosity > 0 or debug:
@@ -85,16 +89,16 @@ def perform_audit(file_path, db_conn, verbosity, debug):
                                             print(f"Match from review variables for user: {user_name}, table: {table_name}, column: {column_name}, value: {value}")
                                             logging.debug(f"Review needed for user: {user_name}, table: {table_name}, column: {column_name}, value: {value}")
                                     if any(role in value.lower() for role in config['admin_roles']):
-                                        audit_data[user_name]["needs_review"] = True
-                                        audit_data[user_name]["comments"].add(f"{table_name} - {column_name}: {value} (Admin Role)")
+                                        audit_data[user_name]["admin_privileges_review"] = True
+                                        audit_data[user_name]["admin_comments"].add(f"{table_name}")
                                         if verbosity > 0 or debug:
                                             print(f"Admin role found for user: {user_name}, table: {table_name}, column: {column_name}, value: {value}")
                                             logging.debug(f"Admin role found for user: {user_name}, table: {table_name}, column: {column_name}, value: {value}")
                                     # Insert into audit table
-                                    cursor.execute('''INSERT INTO audit (username, service_name, field_name, field_value, needs_review, comments)
-                                                      VALUES (?, ?, ?, ?, ?, ?)''', (user_email, table_name, column_name, value, match_count >= 2 or audit_data[user_name]["needs_review"], "; ".join(audit_data[user_name]["comments"])))
+                                    cursor.execute('''INSERT INTO audit (username, service_name, field_name, field_value, needs_review, admin_privileges_review, comments, admin_comments)
+                                                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', (user_email, table_name, column_name, value, match_count >= 2, audit_data[user_name]["admin_privileges_review"], "; ".join(audit_data[user_name]["comments"]), "; ".join(audit_data[user_name]["admin_comments"])))
                                     if debug:
-                                        logging.debug(f"Inserted into audit table: {user_email, table_name, column_name, value, match_count >= 2 or audit_data[user_name]["needs_review"], "; ".join(audit_data[user_name]["comments"])}")
+                                        logging.debug(f"Inserted into audit table: {user_email, table_name, column_name, value, match_count >= 2, audit_data[user_name]["admin_privileges_review"], "; ".join(audit_data[user_name]["comments"]), "; ".join(audit_data[user_name]["admin_comments"])}")
                         else:
                             if table_name not in audit_data[user_name]["services"]:
                                 audit_data[user_name]["services"][table_name] = {}
