@@ -24,7 +24,7 @@ def write_audit_to_rollup(file_path, db_conn, verbosity, debug):
     rollup_sheet.delete_rows(2, rollup_sheet.max_row)
 
     # Add headers
-    headers = ["User", "Email", "Created From", "Needs Review", "Comments"]
+    headers = ["User", "Email", "Created From", "Needs Review", "Admin Privileges Review", "Comments"]
     cursor = db_conn.cursor()
     cursor.execute("SELECT DISTINCT service_name, field_name FROM audit")
     service_columns = cursor.fetchall()
@@ -37,16 +37,17 @@ def write_audit_to_rollup(file_path, db_conn, verbosity, debug):
     rollup_sheet.append(headers)
 
     # Write audit data to Rollup sheet
-    cursor.execute('SELECT username, service_name, field_name, field_value, needs_review, comments FROM audit')
+    cursor.execute('SELECT username, service_name, field_name, field_value, needs_review, admin_privileges_review, comments FROM audit')
     audit_data = cursor.fetchall()
 
     user_data = {}
-    for username, service_name, field_name, field_value, needs_review, comments in audit_data:
+    for username, service_name, field_name, field_value, needs_review, admin_privileges_review, comments in audit_data:
         if username not in user_data:
             user_data[username] = {
                 "services": {},
                 "comments": set(),  # Use a set to avoid duplicate comments
-                "needs_review": needs_review
+                "needs_review": needs_review,
+                "admin_privileges_review": admin_privileges_review
             }
         if service_name not in user_data[username]["services"]:
             user_data[username]["services"][service_name] = {}
@@ -62,7 +63,14 @@ def write_audit_to_rollup(file_path, db_conn, verbosity, debug):
         else:
             user_email, display_name, created_from = username, username, "N/A"
 
-        user_row = [display_name, user_email, created_from, "Yes" if data["needs_review"] else "No", "; ".join(data["comments"])]
+        user_row = [
+            display_name,
+            user_email,
+            created_from,
+            "TRUE" if data["needs_review"] else "",
+            "TRUE" if data["admin_privileges_review"] else "",
+            "; ".join(data["comments"])
+        ]
         for service_name, field_name in service_columns:
             if field_name in config['review_columns']:  # Only process columns in review_columns
                 value = data["services"].get(service_name, {}).get(field_name, "N/A")

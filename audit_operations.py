@@ -26,6 +26,7 @@ def perform_audit(file_path, db_conn, verbosity, debug):
     # Create audit table
     cursor = db_conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS audit (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         username TEXT,
                         service_name TEXT,
                         field_name TEXT,
@@ -94,11 +95,19 @@ def perform_audit(file_path, db_conn, verbosity, debug):
                                         if verbosity > 0 or debug:
                                             print(f"Admin role found for user: {user_name}, table: {table_name}, column: {column_name}, value: {value}")
                                             logging.debug(f"Admin role found for user: {user_name}, table: {table_name}, column: {column_name}, value: {value}")
-                                    # Insert into audit table
-                                    cursor.execute('''INSERT INTO audit (username, service_name, field_name, field_value, needs_review, admin_privileges_review, comments, admin_comments)
-                                                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', (user_email, table_name, column_name, value, match_count >= 2, audit_data[user_name]["admin_privileges_review"], "; ".join(audit_data[user_name]["comments"]), "; ".join(audit_data[user_name]["admin_comments"])))
+                                    # Check if entry exists
+                                    cursor.execute('''SELECT id FROM audit WHERE username = ? service_name = ? AND field_name = ?''', (user_email, table_name, column_name))
+                                    existing_entry = cursor.fetchone()
+                                    if existing_entry:
+                                        # Update existing entry
+                                        cursor.execute('''UPDATE audit SET field_value = ?, needs_review = ?, admin_privileges_review = ?, comments = ?, admin_comments = ? WHERE id = ?''',
+                                                       (value, match_count >= 2, audit_data[user_name]["admin_privileges_review"], "; ".join(audit_data[user_name]["comments"]), "; ".join(audit_data[user_name]["admin_comments"]), existing_entry[0]))
+                                    else:
+                                        # Insert new entry
+                                        cursor.execute('''INSERT INTO audit (username, service_name, field_name, field_value, needs_review, admin_privileges_review, comments, admin_comments)
+                                                          VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', (user_email, table_name, column_name, value, match_count >= 2, audit_data[user_name]["admin_privileges_review"], "; ".join(audit_data[user_name]["comments"]), "; ".join(audit_data[user_name]["admin_comments"])))
                                     if debug:
-                                        logging.debug(f"Inserted into audit table: {user_email, table_name, column_name, value, match_count >= 2, audit_data[user_name]["admin_privileges_review"], "; ".join(audit_data[user_name]["comments"]), "; ".join(audit_data[user_name]["admin_comments"])}")
+                                        logging.debug(f"Inserted/Updated audit table: {user_email, table_name, column_name, value, match_count >= 2, audit_data[user_name]["admin_privileges_review"], "; ".join(audit_data[user_name]["comments"]), "; ".join(audit_data[user_name]["admin_comments"])}")
                         else:
                             if table_name not in audit_data[user_name]["services"]:
                                 audit_data[user_name]["services"][table_name] = {}
