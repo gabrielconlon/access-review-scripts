@@ -96,7 +96,7 @@ def perform_audit(file_path, db_conn, verbosity, debug):
                                             print(f"Admin role found for user: {user_name}, table: {table_name}, column: {column_name}, value: {value}")
                                             logging.debug(f"Admin role found for user: {user_name}, table: {table_name}, column: {column_name}, value: {value}")
                                     # Check if entry exists
-                                    cursor.execute('''SELECT id FROM audit WHERE username = ? service_name = ? AND field_name = ?''', (user_email, table_name, column_name))
+                                    cursor.execute('''SELECT id FROM audit WHERE username = ? AND service_name = ? AND field_name = ?''', (user_email, table_name, column_name))
                                     existing_entry = cursor.fetchone()
                                     if existing_entry:
                                         # Update existing entry
