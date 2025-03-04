@@ -26,55 +26,54 @@ def write_audit_to_rollup(file_path, db_conn, verbosity, debug):
     # Add headers
     headers = ["User", "Email", "Created From", "Needs Review", "Admin Privileges Review", "Comments"]
     cursor = db_conn.cursor()
-    cursor.execute("SELECT DISTINCT service_name, field_name FROM audit")
-    service_columns = cursor.fetchall()
-    for service_name, field_name in service_columns:
-        if field_name in config['review_columns']:  # Only add columns in review_columns
-            headers.append(f"{service_name} - {field_name}")
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    tables = cursor.fetchall()
+    service_columns = []
+    for table in tables:
+        table_name = table[0]
+        if table_name not in config['excluded_sheets']:
+            cursor.execute(f'PRAGMA table_info("{table_name}")')
+            columns = cursor.fetchall()
+            for column in columns:
+                if column[1] in config['review_columns']:
+                    service_columns.append((table_name, column[1]))
+                    headers.append(f"{table_name} - {column[1]}")
 
     if verbosity > 0:
         print(f"Headers: {headers}")
     rollup_sheet.append(headers)
 
     # Write audit data to Rollup sheet
-    cursor.execute('SELECT username, service_name, field_name, field_value, needs_review, admin_privileges_review, comments FROM audit')
-    audit_data = cursor.fetchall()
+    cursor.execute('SELECT mail, display_name, created_from, needs_review, is_admin, comments FROM users')
+    user_data = cursor.fetchall()
 
-    user_data = {}
-    for username, service_name, field_name, field_value, needs_review, admin_privileges_review, comments in audit_data:
-        if username not in user_data:
-            user_data[username] = {
-                "services": {},
-                "comments": set(),  # Use a set to avoid duplicate comments
-                "needs_review": needs_review,
-                "admin_privileges_review": admin_privileges_review
-            }
-        if service_name not in user_data[username]["services"]:
-            user_data[username]["services"][service_name] = {}
-        user_data[username]["services"][service_name][field_name] = field_value
-        if needs_review:
-            user_data[username]["comments"].add(comments)
-
-    for username, data in user_data.items():
-        cursor.execute('SELECT mail, display_name, created_from FROM users WHERE mail = ?', (username,))
-        user_info = cursor.fetchone()
-        if user_info:
-            user_email, display_name, created_from = user_info
-        else:
-            user_email, display_name, created_from = username, username, "N/A"
+    for user in user_data:
+        user_email, display_name, created_from, needs_review, is_admin, comments = user
 
         user_row = [
             display_name,
             user_email,
             created_from,
-            "TRUE" if data["needs_review"] else "",
-            "TRUE" if data["admin_privileges_review"] else "",
-            "; ".join(data["comments"])
+            "TRUE" if needs_review else "",
+            "TRUE" if is_admin else "",
+            comments
         ]
         for service_name, field_name in service_columns:
-            if field_name in config['review_columns']:  # Only process columns in review_columns
-                value = data["services"].get(service_name, {}).get(field_name, "N/A")
-                user_row.append(value)
+            cursor.execute(f'PRAGMA table_info("{service_name}")')
+            columns = cursor.fetchall()
+            login_column = next((col for col in config['login_columns'] if col in [desc[1] for desc in columns]), None)
+            if login_column:
+                try:
+                    cursor.execute(f'SELECT {field_name} FROM "{service_name}" WHERE LOWER({login_column}) = LOWER(?)', (user_email,))
+                    value = cursor.fetchone()
+                    user_row.append(value[0] if value else "N/A")
+                except sqlite3.OperationalError as e:
+                    user_row.append("N/A")
+                    if verbosity > 0 or debug:
+                        print(f"Error querying {service_name} for column {field_name}: {e}")
+                        logging.debug(f"Error querying {service_name} for column {field_name}: {e}")
+            else:
+                user_row.append("N/A")
 
         if verbosity > 0 or debug:
             print(f"Appending user row to Rollup sheet: {user_row}")

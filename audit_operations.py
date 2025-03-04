@@ -23,41 +23,32 @@ def perform_audit(file_path, db_conn, verbosity, debug):
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    # Create audit table
+    # Check if columns exist and add them if they don't
     cursor = db_conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS audit (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        username TEXT,
-                        service_name TEXT,
-                        field_name TEXT,
-                        field_value TEXT,
-                        needs_review BOOLEAN,
-                        admin_privileges_review BOOLEAN,
-                        comments TEXT,
-                        admin_comments TEXT,
-                        FOREIGN KEY(username) REFERENCES users(mail)
-                      )''')
+    cursor.execute("PRAGMA table_info(users)")
+    columns = cursor.fetchall()
+    column_names = [column[1] for column in columns]
+
+    if 'needs_review' not in column_names:
+        cursor.execute('''ALTER TABLE users ADD COLUMN needs_review BOOLEAN DEFAULT 0''')
+    if 'is_admin' not in column_names:
+        cursor.execute('''ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0''')
+    if 'comments' not in column_names:
+        cursor.execute('''ALTER TABLE users ADD COLUMN comments TEXT''')
     db_conn.commit()
-    print("Table 'audit' created or already exists.")
 
     # Add user data
     cursor.execute('SELECT * FROM users')
     users = cursor.fetchall()
-    audit_data = {}
 
     for user in users:
         user_name = user[2]  # Correctly map the display name
         user_email = user[1].lower() if user[1] else None  # Convert email to lowercase for case-insensitive comparison
         created_from = user[4]
-        audit_data[user_name] = {
-            "email": user_email,
-            "services": {},
-            "needs_review": False,
-            "admin_privileges_review": False,
-            "created_from": created_from,
-            "comments": set(),  # Use a set to avoid duplicate comments
-            "admin_comments": set()  # Use a set to avoid duplicate admin comments
-        }
+        needs_review = False
+        is_admin = False
+        comments = set()  # Use a set to avoid duplicate comments
+        admin_comments = set()  # Use a set to avoid duplicate admin comments
 
         if verbosity > 0 or debug:
             print(f"Processing user: {user_name} (Email: {user_email})")
@@ -71,7 +62,7 @@ def perform_audit(file_path, db_conn, verbosity, debug):
             if table_name not in config['excluded_sheets']:
                 cursor.execute(f'PRAGMA table_info("{table_name}")')
                 columns = cursor.fetchall()
-                login_column = next((column[1] for column in columns if column[1].lower() in config['login_columns']), None)
+                login_column = next((col for col in config['login_columns'] if col in [desc[1] for desc in columns]), None)
 
                 if login_column:
                     try:
@@ -80,54 +71,36 @@ def perform_audit(file_path, db_conn, verbosity, debug):
                         if service_data:
                             for column_name, value in zip([col[1] for col in columns], service_data):
                                 if column_name in config['review_columns']:  # Only process columns in review_columns
-                                    if table_name not in audit_data[user_name]["services"]:
-                                        audit_data[user_name]["services"][table_name] = {}
-                                    audit_data[user_name]["services"][table_name][column_name] = value
                                     if value in config['review_values']:
                                         match_count += 1
-                                        audit_data[user_name]["comments"].add(f"{table_name} - {column_name}: {value}")
+                                        comments.add(f"{table_name} - {column_name}: {value}")
                                         if verbosity > 0 or debug:
                                             print(f"Match from review variables for user: {user_name}, table: {table_name}, column: {column_name}, value: {value}")
                                             logging.debug(f"Review needed for user: {user_name}, table: {table_name}, column: {column_name}, value: {value}")
                                     if any(role in value.lower() for role in config['admin_roles']):
-                                        audit_data[user_name]["admin_privileges_review"] = True
-                                        audit_data[user_name]["admin_comments"].add(f"{table_name}")
+                                        is_admin = True
+                                        admin_comments.add(f"{table_name}")
                                         if verbosity > 0 or debug:
                                             print(f"Admin role found for user: {user_name}, table: {table_name}, column: {column_name}, value: {value}")
                                             logging.debug(f"Admin role found for user: {user_name}, table: {table_name}, column: {column_name}, value: {value}")
-                                    # Check if entry exists
-                                    cursor.execute('''SELECT id FROM audit WHERE username = ? AND service_name = ? AND field_name = ?''', (user_email, table_name, column_name))
-                                    existing_entry = cursor.fetchone()
-                                    if existing_entry:
-                                        # Update existing entry
-                                        cursor.execute('''UPDATE audit SET field_value = ?, needs_review = ?, admin_privileges_review = ?, comments = ?, admin_comments = ? WHERE id = ?''',
-                                                       (value, match_count >= 2, audit_data[user_name]["admin_privileges_review"], "; ".join(audit_data[user_name]["comments"]), "; ".join(audit_data[user_name]["admin_comments"]), existing_entry[0]))
-                                    else:
-                                        # Insert new entry
-                                        cursor.execute('''INSERT INTO audit (username, service_name, field_name, field_value, needs_review, admin_privileges_review, comments, admin_comments)
-                                                          VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', (user_email, table_name, column_name, value, match_count >= 2, audit_data[user_name]["admin_privileges_review"], "; ".join(audit_data[user_name]["comments"]), "; ".join(audit_data[user_name]["admin_comments"])))
-                                    if debug:
-                                        logging.debug(f"Inserted/Updated audit table: {user_email, table_name, column_name, value, match_count >= 2, audit_data[user_name]["admin_privileges_review"], "; ".join(audit_data[user_name]["comments"]), "; ".join(audit_data[user_name]["admin_comments"])}")
                         else:
-                            if table_name not in audit_data[user_name]["services"]:
-                                audit_data[user_name]["services"][table_name] = {}
-                            audit_data[user_name]["services"][table_name][column_name] = "N/A"
                             if debug:
                                 logging.debug(f"No service data found for user: {user_name}, table: {table_name}, column: {column_name}")
                     except sqlite3.OperationalError as e:
                         logging.error(f"Error querying {table_name} for column {column_name}: {e}")
-                        if table_name not in audit_data[user_name]["services"]:
-                            audit_data[user_name]["services"][table_name] = {}
-                        audit_data[user_name]["services"][table_name][column_name] = "N/A"
                         if debug:
                             logging.debug(f"OperationalError for user: {user_name}, table: {table_name}, column: {column_name}")
 
         if match_count >= 2:
-            audit_data[user_name]["needs_review"] = True
+            needs_review = True
             if debug:
                 logging.debug(f"User {user_name} marked for review with match_count: {match_count}")
 
-    db_conn.commit()
+        # Update users table
+        cursor.execute('''UPDATE users SET needs_review = ?, is_admin = ?, comments = ? WHERE mail = ?''',
+                       (needs_review, is_admin, "; ".join(comments), user_email))
+        db_conn.commit()
+
     print("Audit completed and saved to database.")
     if debug:
         logging.debug("Audit completed and saved to database.")
